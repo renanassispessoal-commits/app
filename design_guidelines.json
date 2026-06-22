@@ -1,0 +1,166 @@
+{
+  "app_name": "LoungeMatch",
+  "personality": "6 Glass / Luxe DARK",
+  "personality_one_liner": "An exclusive, cinematic nightlife experience where connections feel electric and premium.",
+  "color": {
+    "surface": "#09090B",
+    "onSurface": "#FAFAFA",
+    "surfaceSecondary": "#18181B",
+    "onSurfaceSecondary": "#E4E4E7",
+    "surfaceTertiary": "#27272A",
+    "onSurfaceTertiary": "#A1A1AA",
+    "surfaceInverse": "#FAFAFA",
+    "onSurfaceInverse": "#09090B",
+    "brand": "#10B981",
+    "brandPrimary": "#059669",
+    "onBrandPrimary": "#FFFFFF",
+    "brandSecondary": "#34D399",
+    "onBrandSecondary": "#022C22",
+    "brandTertiary": "#064E3B",
+    "onBrandTertiary": "#A7F3D0",
+    "success": "#10B981",
+    "onSuccess": "#FFFFFF",
+    "warning": "#F59E0B",
+    "onWarning": "#000000",
+    "error": "#E11D48",
+    "onError": "#FFFFFF",
+    "info": "#3B82F6",
+    "onInfo": "#FFFFFF",
+    "border": "#27272A",
+    "borderStrong": "#3F3F46",
+    "divider": "#27272A"
+  },
+  "typography": {
+    "displayFontFamily": "Fraunces",
+    "textFontFamily": "Geist",
+    "scale": {
+      "sm": 12,
+      "base": 14,
+      "lg": 16,
+      "xl": 20,
+      "2xl": 24
+    }
+  },
+  "spacing": {
+    "rule": "Generous cinematic spacing. Content must breathe. Sticky primary CTA at bottom above safe area.",
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 24,
+    "2xl": 32,
+    "3xl": 48
+  },
+  "radius_tokens": {
+    "sm": 8,
+    "md": 16,
+    "lg": 24,
+    "pill": 999
+  },
+  "shadow_tier": "0",
+  "navigation": "bottom_tabs",
+  "icon_set": "Phosphor",
+  "glassmorphism": {
+    "enabled": "true",
+    "do's": [
+      "Tab bar must be frosted glass",
+      "Floating action buttons (FABs)",
+      "Bottom-sheet handles and headers",
+      "Featured swipe cards metadata overlay (tinted base + blur)",
+      "Match modal background"
+    ],
+    "dont's": [
+      "Never blur body text regions",
+      "Never blur standard form inputs",
+      "Avoid glass on dense chat list rows"
+    ]
+  },
+  "platform_libraries": {
+    "glass": {
+      "ios": "expo-glass-effect",
+      "android": "expo-blur",
+      "low_end_android_fallback": "solid surfaceSecondary"
+    },
+    "image": "expo-image",
+    "blur": "expo-blur",
+    "bottom_sheet": "@gorhom/bottom-sheet",
+    "animation": "react-native-reanimated",
+    "gesture": "react-native-gesture-handler"
+  },
+  "screens": [
+    {
+      "name": "RoomScanner",
+      "purpose": "Onboarding screen to join a party by scanning a QR code.",
+      "states": {
+        "loading": "Centered brand spinner over camera view.",
+        "empty": "Camera viewport with a scan frame and 'Fallback Code' entry.",
+        "error": "Blurry camera feed with an 'Invalid Room Code' error overlay and Retry button."
+      },
+      "layout": "Camera view takes up the top 70% of the screen. Bottom 30% features a glassmorphic bottom sheet indicating 'Scan to enter Lounge' and a secondary CTA for manual code entry."
+    },
+    {
+      "name": "SwipeDeck",
+      "purpose": "The main room feed where users swipe on attendees in the same party.",
+      "states": {
+        "loading": "Dark pulsating skeleton card.",
+        "empty": "Elegant glass illustration indicating 'You've seen everyone in this room!'.",
+        "error": "Error fetching room attendees with a retry button."
+      },
+      "layout": "Full-screen profile card. Layer 0: expo-image hero photo. Layer 1: linear-gradient scrim (transparent to #09090B at 90%). Layer 2: Minimal metadata (Name, Age, Bio) in the bottom 30%. Bottom action bar floats over the card with two large glassmorphic pill buttons: 'Pass' (uses error color) and 'Like' (uses brandPrimary)."
+    },
+    {
+      "name": "MatchModal",
+      "purpose": "Celebratory full-screen modal when a mutual like occurs.",
+      "states": {
+        "loading": "Spinner.",
+        "empty": "N/A",
+        "error": "N/A"
+      },
+      "layout": "Heavy blur over the swipe deck background. Two overlapping circular avatars in the center, surrounded by a subtle #10B981 glow. Large Fraunces title 'It's a Match'. Primary CTA 'Send Message' sticky at bottom."
+    },
+    {
+      "name": "ChatList",
+      "purpose": "List of active chats with matched attendees.",
+      "states": {
+        "loading": "List of skeleton rows.",
+        "empty": "Illustration of two empty glasses with 'No matches yet. Keep swiping!'",
+        "error": "Failed to load chats."
+      },
+      "layout": "Glassmorphic sticky header with the Room Name. Standard list items: Avatar (real photo), Name, Last Message, unread dot. Generous vertical spacing."
+    }
+  ],
+  "images": {
+    "party_background": {
+      "url": "https://images.unsplash.com/photo-1578736641330-3155e606cd40?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1Nzl8MHwxfHNlYXJjaHwyfHxuaWdodGNsdWIlMjBwYXJ0eSUyMHBlb3BsZXxlbnwwfHx8fDE3ODIxMzg4MDl8MA&ixlib=rb-4.1.0&q=85",
+      "alt": "people dancing inside room with green lights"
+    },
+    "swipe_card_1": {
+      "url": "https://images.pexels.com/photos/29650424/pexels-photo-29650424.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "alt": "Young woman in a colorful nightclub setting"
+    },
+    "swipe_card_2": {
+      "url": "https://images.pexels.com/photos/13704734/pexels-photo-13704734.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "alt": "Stylish woman poses gracefully against vibrant backdrop"
+    },
+    "qr_scan_illustration": {
+      "url": "https://images.unsplash.com/photo-1595079676339-1534801ad6cf?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1Nzl8MHwxfHNlYXJjaHwxfHxxciUyMGNvZGUlMjBzY2FuJTIwb24lMjBwaG9uZXxlbnwwfHx8fDE3ODIxMzg4MDl8MA&ixlib=rb-4.1.0&q=85",
+      "alt": "smartphone displaying qr code"
+    }
+  },
+  "instructions_to_main_agent": [
+    "Implement the '6 Glass / Luxe DARK' personality. Do NOT invert to a light theme. The app must be dark, cinematic, and premium.",
+    "No indigo, violet, purple, magenta, or blue anywhere in the app. Use the defined #10B981 Emerald Green and #E11D48 Ruby Red.",
+    "Every image card in the SwipeDeck MUST have a gradient scrim overlay (Layer 1: transparent at 0% to #09090B at 90%) so text is readable.",
+    "Implement the swipe interaction using react-native-gesture-handler and react-native-reanimated. The card should rotate slightly based on swipe direction.",
+    "Use glassmorphism (expo-blur) heavily on elevated surfaces: Tab bar, Match modal overlay, floating action buttons.",
+    "Use Fraunces (weight 400/500 only) for main titles like 'It's a Match' and Room headers, and Geist for all UI text.",
+    "Implement haptics on card swipes (left/right) and successful matches."
+  ],
+  "haptics": {
+    "swipe_left": "impactLight",
+    "swipe_right": "impactMedium",
+    "match_success": "notificationSuccess",
+    "scan_success": "notificationSuccess",
+    "button_press": "selection"
+  }
+}
