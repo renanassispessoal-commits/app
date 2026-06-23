@@ -42,7 +42,6 @@ export default function Deck() {
   const { width } = useWindowDimensions();
   const [deck, setDeck] = useState<Participant[]>([]);
   const [loading, setLoading] = useState(true);
-  const [matchModal, setMatchModal] = useState<Participant | null>(null);
   const [reportModal, setReportModal] = useState<Participant | null>(null);
   const [reportReason, setReportReason] = useState("abuse");
   const [reportDesc, setReportDesc] = useState("");
@@ -81,11 +80,25 @@ export default function Deck() {
         target_id: target.id,
         liked,
       });
-      if (res.data.is_match) {
+      if (res.data.quota_exceeded) {
+        router.push("/user/paywall");
+        return;
+      }
+      if (res.data.is_match && res.data.match) {
         try {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         } catch {}
-        setMatchModal(target);
+        router.push({
+          pathname: "/user/chat",
+          params: {
+            matchId: res.data.match.id,
+            participantId,
+            roomId,
+            otherName: target.name,
+            otherPhoto: target.photo,
+            expiresAt: res.data.match.expires_at,
+          },
+        });
       }
     } catch (e) {
       console.warn(e);
@@ -123,7 +136,7 @@ export default function Deck() {
           >
             <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
           </Pressable>
-          <Text style={styles.brandTitle}>LoungeMatch</Text>
+          <Text style={styles.brandTitle}>Te Achei</Text>
           <Pressable
             testID="matches-btn"
             onPress={() =>
@@ -147,7 +160,8 @@ export default function Deck() {
             <Ionicons name="sparkles" size={48} color={colors.brand} />
             <Text style={styles.emptyTitle}>Fim por aqui!</Text>
             <Text style={styles.emptySub}>
-              Você viu todos da sala. Volte mais tarde para conferir novidades.
+              Você viu todos da sala. Volte mais tarde para conferir
+              novidades.
             </Text>
             <Pressable
               testID="refresh-btn"
@@ -161,7 +175,7 @@ export default function Deck() {
           <View style={[styles.card, { width: width - spacing.xl * 2 }]}>
             <Image source={{ uri: current.photo }} style={styles.cardImg} />
             <LinearGradient
-              colors={["transparent", "rgba(9,9,11,0.95)"]}
+              colors={["transparent", "rgba(10,0,16,0.95)"]}
               locations={[0.5, 1]}
               style={StyleSheet.absoluteFillObject}
             />
@@ -198,60 +212,28 @@ export default function Deck() {
 
       {current && !loading && (
         <View style={styles.actionRow}>
-          <Pressable
-            testID="pass-btn"
-            onPress={() => swipe(current, false)}
-            style={[styles.actionBtn, styles.passBtn]}
-          >
-            <Ionicons name="close" size={32} color={colors.error} />
-          </Pressable>
-          <Pressable
-            testID="like-btn"
-            onPress={() => swipe(current, true)}
-            style={[styles.actionBtn, styles.likeBtn]}
-          >
-            <Ionicons name="heart" size={32} color={colors.brand} />
-          </Pressable>
+          <View style={styles.actionCol}>
+            <Pressable
+              testID="pass-btn"
+              onPress={() => swipe(current, false)}
+              style={[styles.actionBtn, styles.passBtn]}
+            >
+              <Ionicons name="close" size={36} color={colors.error} />
+            </Pressable>
+            <Text style={styles.actionLabel}>NÃO VI</Text>
+          </View>
+          <View style={styles.actionCol}>
+            <Pressable
+              testID="like-btn"
+              onPress={() => swipe(current, true)}
+              style={[styles.actionBtn, styles.likeBtn]}
+            >
+              <Ionicons name="eye" size={34} color={colors.brand} />
+            </Pressable>
+            <Text style={[styles.actionLabel, { color: colors.brand }]}>TE VI</Text>
+          </View>
         </View>
       )}
-
-      {/* Match Modal */}
-      <Modal
-        transparent
-        visible={!!matchModal}
-        animationType="fade"
-        onRequestClose={() => setMatchModal(null)}
-      >
-        <View style={styles.modalBg}>
-          <Text style={styles.matchTitle}>It&apos;s a Match!</Text>
-          <Text style={styles.matchSub}>
-            Você e {matchModal?.name} se curtiram.
-          </Text>
-          {matchModal?.photo && (
-            <Image source={{ uri: matchModal.photo }} style={styles.matchAvatar} />
-          )}
-          <Pressable
-            testID="goto-chat-btn"
-            onPress={() => {
-              setMatchModal(null);
-              router.push({
-                pathname: "/user/matches",
-                params: { roomId, participantId },
-              });
-            }}
-            style={[styles.matchCta]}
-          >
-            <Text style={styles.matchCtaTxt}>Abrir conversa</Text>
-          </Pressable>
-          <Pressable
-            testID="keep-swiping-btn"
-            onPress={() => setMatchModal(null)}
-            style={styles.matchSecondary}
-          >
-            <Text style={styles.matchSecondaryTxt}>Continuar curtindo</Text>
-          </Pressable>
-        </View>
-      </Modal>
 
       {/* Report Modal */}
       <Modal
@@ -263,7 +245,9 @@ export default function Deck() {
         <View style={styles.reportOverlay}>
           <View style={styles.reportSheet}>
             <View style={styles.reportHandle} />
-            <Text style={styles.reportTitle}>Denunciar {reportModal?.name}</Text>
+            <Text style={styles.reportTitle}>
+              Denunciar {reportModal?.name}
+            </Text>
             <Text style={styles.reportSubtitle}>
               Sua denúncia é enviada ao anfitrião da sala.
             </Text>
@@ -286,7 +270,9 @@ export default function Deck() {
                     }
                     size={20}
                     color={
-                      reportReason === r.key ? colors.brand : colors.onSurfaceTertiary
+                      reportReason === r.key
+                        ? colors.brand
+                        : colors.onSurfaceTertiary
                     }
                   />
                   <Text style={styles.reasonText}>{r.label}</Text>
@@ -306,14 +292,20 @@ export default function Deck() {
               <Pressable
                 testID="report-cancel"
                 onPress={() => setReportModal(null)}
-                style={[styles.reportBtnCta, { backgroundColor: colors.surfaceTertiary, flex: 1 }]}
+                style={[
+                  styles.reportBtnCta,
+                  { backgroundColor: colors.surfaceTertiary, flex: 1 },
+                ]}
               >
                 <Text style={styles.reportBtnTxt}>Cancelar</Text>
               </Pressable>
               <Pressable
                 testID="report-submit"
                 onPress={submitReport}
-                style={[styles.reportBtnCta, { backgroundColor: colors.error, flex: 1 }]}
+                style={[
+                  styles.reportBtnCta,
+                  { backgroundColor: colors.error, flex: 1 },
+                ]}
               >
                 <Text style={styles.reportBtnTxt}>Enviar denúncia</Text>
               </Pressable>
@@ -351,7 +343,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
   },
   empty: { color: colors.onSurfaceTertiary, fontSize: 16 },
-  emptyBlock: { alignItems: "center", gap: spacing.md, paddingHorizontal: spacing.xl },
+  emptyBlock: {
+    alignItems: "center",
+    gap: spacing.md,
+    paddingHorizontal: spacing.xl,
+  },
   emptyTitle: { color: colors.onSurface, fontSize: 22, fontWeight: "600" },
   emptySub: {
     color: colors.onSurfaceTertiary,
@@ -382,7 +378,7 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 19,
-    backgroundColor: "rgba(9,9,11,0.6)",
+    backgroundColor: "rgba(10,0,16,0.6)",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -395,7 +391,12 @@ const styles = StyleSheet.create({
   },
   cardName: { color: colors.onSurface, fontSize: 28, fontWeight: "600" },
   cardBio: { color: colors.onSurfaceSecondary, fontSize: 14, lineHeight: 20 },
-  interestRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 4 },
+  interestRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    marginTop: 4,
+  },
   tag: {
     backgroundColor: "rgba(199,125,255,0.18)",
     borderColor: colors.brand,
@@ -404,53 +405,37 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 4,
   },
-  tagTxt: { color: colors.brandSecondary, fontSize: 11, fontWeight: "600" },
+  tagTxt: { color: colors.brand, fontSize: 11, fontWeight: "600" },
   actionRow: {
     flexDirection: "row",
     justifyContent: "center",
-    gap: spacing.xl,
+    gap: spacing.xxl,
     paddingBottom: spacing.xl,
     paddingTop: spacing.md,
   },
+  actionCol: { alignItems: "center", gap: spacing.sm },
   actionBtn: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
+    width: 76,
+    height: 76,
+    borderRadius: 38,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1.5,
   },
-  passBtn: { backgroundColor: colors.surfaceSecondary, borderColor: colors.error },
-  likeBtn: { backgroundColor: colors.surfaceSecondary, borderColor: colors.brand },
-  modalBg: {
-    flex: 1,
-    backgroundColor: "rgba(9,9,11,0.95)",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: spacing.xl,
-    gap: spacing.md,
+  actionLabel: {
+    color: colors.onSurfaceTertiary,
+    fontSize: 11,
+    letterSpacing: 2,
+    fontWeight: "700",
   },
-  matchTitle: { color: colors.brand, fontSize: 42, fontWeight: "300", letterSpacing: -1 },
-  matchSub: { color: colors.onSurface, fontSize: 16 },
-  matchAvatar: {
-    width: 160,
-    height: 200,
-    borderRadius: radius.lg,
-    marginVertical: spacing.lg,
-    borderWidth: 2,
+  passBtn: {
+    backgroundColor: colors.surfaceSecondary,
+    borderColor: colors.error,
+  },
+  likeBtn: {
+    backgroundColor: colors.surfaceSecondary,
     borderColor: colors.brand,
   },
-  matchCta: {
-    backgroundColor: colors.brandPrimary,
-    paddingHorizontal: spacing.xxl,
-    paddingVertical: 16,
-    borderRadius: radius.pill,
-    minWidth: 220,
-    alignItems: "center",
-  },
-  matchCtaTxt: { color: "#fff", fontWeight: "700" },
-  matchSecondary: { paddingVertical: 14 },
-  matchSecondaryTxt: { color: colors.onSurfaceTertiary },
   reportOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.7)",

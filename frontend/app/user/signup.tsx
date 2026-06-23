@@ -147,13 +147,13 @@ export default function UserSignup() {
           <View style={styles.photoSection}>
             <Pressable
               testID="photo-pick"
-              onPress={pickFromGallery}
+              onPress={takePhoto}
               style={styles.photoBox}
             >
               {photo ? (
                 <Image source={{ uri: photo }} style={styles.photoImg} />
               ) : (
-                <Ionicons name="image" size={32} color={PURPLE} />
+                <Ionicons name="camera" size={32} color={"#C77DFF"} />
               )}
             </Pressable>
             <View style={{ gap: spacing.sm, flex: 1 }}>
@@ -163,16 +163,21 @@ export default function UserSignup() {
                 style={styles.photoBtn}
               >
                 <Ionicons name="camera" size={18} color="#E0AAFF" />
-                <Text style={styles.photoBtnText}>Tirar foto</Text>
+                <Text style={styles.photoBtnText}>
+                  {photo ? "Tirar nova foto" : "Tirar foto agora"}
+                </Text>
               </Pressable>
-              <Pressable
-                testID="photo-gallery"
-                onPress={pickFromGallery}
-                style={styles.photoBtn}
-              >
-                <Ionicons name="images" size={18} color="#E0AAFF" />
-                <Text style={styles.photoBtnText}>Galeria</Text>
-              </Pressable>
+              <View style={styles.noGalleryNote}>
+                <Ionicons
+                  name="shield-checkmark"
+                  size={14}
+                  color={"#C77DFF"}
+                />
+                <Text style={styles.noGalleryTxt}>
+                  Sem galeria: a foto precisa ser tirada agora pra garantir
+                  perfil real, sem fakes.
+                </Text>
+              </View>
             </View>
           </View>
 
@@ -323,6 +328,21 @@ const styles = StyleSheet.create({
     borderColor: "rgba(157,78,221,0.3)",
   },
   photoBtnText: { color: "#E0AAFF", fontWeight: "600" },
+  noGalleryNote: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    backgroundColor: "rgba(157,78,221,0.1)",
+    padding: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: "rgba(157,78,221,0.3)",
+  },
+  noGalleryTxt: {
+    color: "#CDB4DB",
+    fontSize: 11,
+    lineHeight: 15,
+    flex: 1,
+  },
   label: {
     color: "#CDB4DB",
     fontSize: 11,

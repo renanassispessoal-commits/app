@@ -241,11 +241,39 @@ async def create_user(data: UserCreate):
         "bio": data.bio,
         "interests": data.interests,
         "photo": data.photo,
+        "matches_quota": 5,
+        "matches_used": 0,
         "created_at": now_iso(),
     }
     await db.users.insert_one(user)
     user.pop("_id", None)
     return user
+
+
+@api_router.post("/users/{user_id}/unlock-pack")
+async def unlock_pack(user_id: str):
+    """Mocked R$40 purchase: unlocks +20 matches. TODO: integrate Stripe."""
+    user = await db.users.find_one({"id": user_id})
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    new_quota = (user.get("matches_quota", 5)) + 20
+    await db.users.update_one(
+        {"id": user_id},
+        {"$set": {"matches_quota": new_quota}, "$push": {"packs": {"amount_brl": 40, "matches": 20, "purchased_at": now_iso()}}},
+    )
+    return {"matches_quota": new_quota, "matches_used": user.get("matches_used", 0)}
+
+
+@api_router.get("/users/{user_id}/quota")
+async def user_quota(user_id: str):
+    user = await db.users.find_one({"id": user_id}, {"_id": 0, "matches_quota": 1, "matches_used": 1})
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    return {
+        "matches_quota": user.get("matches_quota", 5),
+        "matches_used": user.get("matches_used", 0),
+        "remaining": max(0, user.get("matches_quota", 5) - user.get("matches_used", 0)),
+    }
 
 
 # ========== ROOMS ==========
@@ -396,6 +424,9 @@ async def get_deck(room_id: str, participant_id: str):
 
 
 # ========== SWIPES & MATCHES ==========
+MATCH_TTL_SECONDS = 5 * 60  # 5 minutes — match self-destructs after this
+
+
 @api_router.post("/swipes")
 async def create_swipe(data: SwipeCreate):
     swipe = {
@@ -410,6 +441,7 @@ async def create_swipe(data: SwipeCreate):
 
     is_match = False
     match = None
+    quota_exceeded = False
     if data.liked:
         reciprocal = await db.swipes.find_one({
             "room_id": data.room_id,
@@ -418,8 +450,24 @@ async def create_swipe(data: SwipeCreate):
             "liked": True,
         })
         if reciprocal:
+            # Check current swiper's quota
+            me_part = await db.participants.find_one({"id": data.participant_id})
+            if me_part and me_part.get("user_id"):
+                me_user = await db.users.find_one({"id": me_part["user_id"]})
+                if me_user:
+                    used = me_user.get("matches_used", 0)
+                    quota = me_user.get("matches_quota", 5)
+                    if used >= quota:
+                        return {"is_match": False, "match": None, "quota_exceeded": True}
+
             ids_sorted = sorted([data.participant_id, data.target_id])
-            existing_match = await db.matches.find_one({"room_id": data.room_id, "user_a": ids_sorted[0], "user_b": ids_sorted[1]})
+            existing_match = await db.matches.find_one({
+                "room_id": data.room_id,
+                "user_a": ids_sorted[0],
+                "user_b": ids_sorted[1],
+            })
+            now_dt = datetime.now(timezone.utc)
+            expires_at = (now_dt + timedelta(seconds=MATCH_TTL_SECONDS)).isoformat()
             if existing_match:
                 match = {k: v for k, v in existing_match.items() if k != "_id"}
             else:
@@ -428,12 +476,20 @@ async def create_swipe(data: SwipeCreate):
                     "room_id": data.room_id,
                     "user_a": ids_sorted[0],
                     "user_b": ids_sorted[1],
-                    "created_at": now_iso(),
+                    "created_at": now_dt.isoformat(),
+                    "expires_at": expires_at,
                 }
                 await db.matches.insert_one(match)
                 match.pop("_id", None)
+                # Increment matches_used for BOTH users
+                for pid in ids_sorted:
+                    p = await db.participants.find_one({"id": pid})
+                    if p and p.get("user_id"):
+                        await db.users.update_one(
+                            {"id": p["user_id"]}, {"$inc": {"matches_used": 1}}
+                        )
             is_match = True
-    return {"is_match": is_match, "match": match}
+    return {"is_match": is_match, "match": match, "quota_exceeded": quota_exceeded}
 
 
 @api_router.get("/rooms/{room_id}/matches")
@@ -442,8 +498,16 @@ async def list_matches(room_id: str, participant_id: str):
         {"room_id": room_id, "$or": [{"user_a": participant_id}, {"user_b": participant_id}]},
         {"_id": 0}
     ).sort("created_at", -1).to_list(200)
+    now_dt = datetime.now(timezone.utc)
     result = []
     for m in matches:
+        # Skip expired matches
+        try:
+            exp = datetime.fromisoformat(m.get("expires_at")) if m.get("expires_at") else None
+        except Exception:
+            exp = None
+        if exp and exp < now_dt:
+            continue
         other_id = m["user_b"] if m["user_a"] == participant_id else m["user_a"]
         other = await db.participants.find_one({"id": other_id}, {"_id": 0})
         if other:
@@ -454,9 +518,18 @@ async def list_matches(room_id: str, participant_id: str):
                 "match_id": m["id"],
                 "other": other,
                 "created_at": m["created_at"],
+                "expires_at": m.get("expires_at"),
                 "last_message": last_msg,
             })
     return result
+
+
+@api_router.get("/matches/{match_id}")
+async def get_match(match_id: str):
+    m = await db.matches.find_one({"id": match_id}, {"_id": 0})
+    if not m:
+        raise HTTPException(status_code=404, detail="Match não encontrado")
+    return m
 
 
 # ========== MESSAGES ==========
@@ -473,6 +546,13 @@ async def send_message(match_id: str, data: MessageCreate):
         raise HTTPException(status_code=404, detail="Match não encontrado")
     if data.participant_id not in [match["user_a"], match["user_b"]]:
         raise HTTPException(status_code=403, detail="Não autorizado")
+    # Check expiration
+    try:
+        exp = datetime.fromisoformat(match.get("expires_at")) if match.get("expires_at") else None
+    except Exception:
+        exp = None
+    if exp and exp < datetime.now(timezone.utc):
+        raise HTTPException(status_code=410, detail="Esse match expirou.")
     msg = {
         "id": str(uuid.uuid4()),
         "match_id": match_id,
