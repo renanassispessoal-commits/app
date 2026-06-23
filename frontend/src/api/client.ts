@@ -6,6 +6,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 const BASE_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
 const TOKEN_KEY = "lm_host_token";
+const USER_KEY = "lm_user";
 const PARTICIPANT_KEY = "lm_participant";
 
 export async function saveToken(token: string) {
@@ -32,6 +33,22 @@ export async function deleteToken() {
   }
 }
 
+// User (party-goer) persistent profile
+export async function saveUser(u: any) {
+  await AsyncStorage.setItem(USER_KEY, JSON.stringify(u));
+}
+
+export async function getUser(): Promise<any | null> {
+  const raw = await AsyncStorage.getItem(USER_KEY);
+  return raw ? JSON.parse(raw) : null;
+}
+
+export async function clearUser() {
+  await AsyncStorage.removeItem(USER_KEY);
+  await AsyncStorage.removeItem(PARTICIPANT_KEY);
+}
+
+// Per-room participant
 export async function saveParticipant(p: any) {
   await AsyncStorage.setItem(PARTICIPANT_KEY, JSON.stringify(p));
 }
@@ -41,13 +58,9 @@ export async function getParticipant(): Promise<any | null> {
   return raw ? JSON.parse(raw) : null;
 }
 
-export async function clearParticipant() {
-  await AsyncStorage.removeItem(PARTICIPANT_KEY);
-}
-
 export const api = axios.create({
   baseURL: `${BASE_URL}/api`,
-  timeout: 20000,
+  timeout: 25000,
 });
 
 api.interceptors.request.use(async (config) => {

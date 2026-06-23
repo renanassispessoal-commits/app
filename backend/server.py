@@ -11,7 +11,8 @@ from typing import List, Optional
 import uuid
 import random
 import string
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, date, timezone, timedelta
+from math import radians, sin, cos, asin, sqrt
 import jwt
 from passlib.context import CryptContext
 
@@ -19,15 +20,13 @@ from passlib.context import CryptContext
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-# MongoDB connection
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
-# JWT config
 SECRET_KEY = os.environ['JWT_SECRET_KEY']
 ALGORITHM = "HS256"
-TOKEN_EXPIRE_HOURS = 24 * 7  # 7 days
+TOKEN_EXPIRE_HOURS = 24 * 7
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer()
@@ -46,6 +45,9 @@ class HostLogin(BaseModel):
     email: EmailStr
     password: str
 
+class HostPlanUpdate(BaseModel):
+    plan: str  # 'daily' | 'monthly' | 'yearly'
+
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
@@ -54,14 +56,26 @@ class Token(BaseModel):
 class RoomCreate(BaseModel):
     name: str
     description: Optional[str] = ""
+    latitude: float
+    longitude: float
+    radius_m: Optional[int] = 200
+
+class UserLookup(BaseModel):
+    cpf: str
+
+class UserCreate(BaseModel):
+    cpf: str
+    name: str
+    birthdate: str  # YYYY-MM-DD
+    bio: Optional[str] = ""
+    interests: List[str] = []
+    photo: str
 
 class ParticipantCreate(BaseModel):
     room_code: str
-    name: str
-    age: int
-    bio: str
-    interests: List[str] = []
-    photo: str  # base64
+    user_id: str
+    latitude: float
+    longitude: float
 
 class SwipeCreate(BaseModel):
     room_id: str
@@ -77,7 +91,7 @@ class ReportCreate(BaseModel):
     room_id: str
     reporter_id: str
     reported_id: str
-    reason: str  # 'abuse', 'harassment', 'spam', 'other'
+    reason: str
     description: Optional[str] = ""
 
 
@@ -113,6 +127,38 @@ def gen_room_code() -> str:
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
+def haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    R = 6371000.0
+    rlat1, rlat2 = radians(lat1), radians(lat2)
+    dlat = radians(lat2 - lat1)
+    dlon = radians(lon2 - lon1)
+    a = sin(dlat / 2) ** 2 + cos(rlat1) * cos(rlat2) * sin(dlon / 2) ** 2
+    return 2 * R * asin(sqrt(a))
+
+def normalize_cpf(cpf: str) -> str:
+    return ''.join(c for c in cpf if c.isdigit())
+
+def valid_cpf(cpf: str) -> bool:
+    cpf = normalize_cpf(cpf)
+    if len(cpf) != 11 or cpf == cpf[0] * 11:
+        return False
+    s = sum(int(cpf[i]) * (10 - i) for i in range(9))
+    d1 = (s * 10) % 11
+    if d1 == 10:
+        d1 = 0
+    if d1 != int(cpf[9]):
+        return False
+    s = sum(int(cpf[i]) * (11 - i) for i in range(10))
+    d2 = (s * 10) % 11
+    if d2 == 10:
+        d2 = 0
+    return d2 == int(cpf[10])
+
+def calc_age(birth_iso: str) -> int:
+    b = date.fromisoformat(birth_iso)
+    today = date.today()
+    return today.year - b.year - ((today.month, today.day) < (b.month, b.day))
+
 
 # ========== AUTH (HOST) ==========
 @api_router.post("/auth/host/register", response_model=Token)
@@ -125,11 +171,15 @@ async def register_host(data: HostRegister):
         "email": data.email.lower(),
         "password": hash_password(data.password),
         "name": data.name,
+        "plan": None,
         "created_at": now_iso(),
     }
     await db.hosts.insert_one(host)
     token = create_access_token({"host_id": host["id"], "role": "host"})
-    return Token(access_token=token, host={"id": host["id"], "email": host["email"], "name": host["name"]})
+    return Token(
+        access_token=token,
+        host={"id": host["id"], "email": host["email"], "name": host["name"], "plan": None},
+    )
 
 
 @api_router.post("/auth/host/login", response_model=Token)
@@ -138,7 +188,10 @@ async def login_host(data: HostLogin):
     if not host or not verify_password(data.password, host["password"]):
         raise HTTPException(status_code=400, detail="Email ou senha incorretos")
     token = create_access_token({"host_id": host["id"], "role": "host"})
-    return Token(access_token=token, host={"id": host["id"], "email": host["email"], "name": host["name"]})
+    return Token(
+        access_token=token,
+        host={"id": host["id"], "email": host["email"], "name": host["name"], "plan": host.get("plan")},
+    )
 
 
 @api_router.get("/auth/host/me")
@@ -146,9 +199,60 @@ async def get_me(host: dict = Depends(get_current_host)):
     return host
 
 
+@api_router.put("/auth/host/plan")
+async def update_plan(data: HostPlanUpdate, host: dict = Depends(get_current_host)):
+    if data.plan not in ("daily", "monthly", "yearly"):
+        raise HTTPException(status_code=400, detail="Plano inválido")
+    await db.hosts.update_one({"id": host["id"]}, {"$set": {"plan": data.plan, "plan_chosen_at": now_iso()}})
+    return {"plan": data.plan}
+
+
+# ========== USERS (party-goers) ==========
+@api_router.post("/users/lookup")
+async def lookup_user(data: UserLookup):
+    cpf = normalize_cpf(data.cpf)
+    if not valid_cpf(cpf):
+        raise HTTPException(status_code=400, detail="CPF inválido")
+    user = await db.users.find_one({"cpf": cpf}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    return user
+
+
+@api_router.post("/users")
+async def create_user(data: UserCreate):
+    cpf = normalize_cpf(data.cpf)
+    if not valid_cpf(cpf):
+        raise HTTPException(status_code=400, detail="CPF inválido")
+    try:
+        age = calc_age(data.birthdate)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Data de nascimento inválida")
+    if age < 18:
+        raise HTTPException(status_code=403, detail=f"Você precisa ter 18 anos ou mais para usar o app (idade atual: {age}).")
+    existing = await db.users.find_one({"cpf": cpf})
+    if existing:
+        raise HTTPException(status_code=400, detail="CPF já cadastrado. Faça login.")
+    user = {
+        "id": str(uuid.uuid4()),
+        "cpf": cpf,
+        "name": data.name,
+        "birthdate": data.birthdate,
+        "bio": data.bio,
+        "interests": data.interests,
+        "photo": data.photo,
+        "created_at": now_iso(),
+    }
+    await db.users.insert_one(user)
+    user.pop("_id", None)
+    return user
+
+
 # ========== ROOMS ==========
 @api_router.post("/rooms")
 async def create_room(data: RoomCreate, host: dict = Depends(get_current_host)):
+    if not host.get("plan"):
+        raise HTTPException(status_code=402, detail="Escolha um plano antes de criar salas")
     code = gen_room_code()
     while await db.rooms.find_one({"code": code}):
         code = gen_room_code()
@@ -158,6 +262,9 @@ async def create_room(data: RoomCreate, host: dict = Depends(get_current_host)):
         "name": data.name,
         "description": data.description,
         "host_id": host["id"],
+        "latitude": data.latitude,
+        "longitude": data.longitude,
+        "radius_m": data.radius_m or 200,
         "active": True,
         "created_at": now_iso(),
     }
@@ -221,19 +328,50 @@ async def join_room(data: ParticipantCreate):
     room = await db.rooms.find_one({"code": data.room_code.upper(), "active": True})
     if not room:
         raise HTTPException(status_code=404, detail="Sala não encontrada ou encerrada")
+    # Geo-fence validation
+    r_lat = room.get("latitude")
+    r_lng = room.get("longitude")
+    radius = room.get("radius_m", 200)
+    if r_lat is not None and r_lng is not None:
+        dist = haversine_m(r_lat, r_lng, data.latitude, data.longitude)
+        if dist > radius:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Você está fora do raio do rolê (~{int(dist)}m). Aproxime-se do local para entrar.",
+            )
+    # Resolve user
+    user = await db.users.find_one({"id": data.user_id}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="Perfil de usuário não encontrado")
+    age = calc_age(user["birthdate"]) if user.get("birthdate") else 0
+    if age < 18:
+        raise HTTPException(status_code=403, detail="Apenas maiores de 18 anos.")
+    # Check if user already in room - return same participant
+    existing = await db.participants.find_one({"room_id": room["id"], "user_id": user["id"]}, {"_id": 0})
+    if existing:
+        return {
+            "participant": existing,
+            "room": {"id": room["id"], "code": room["code"], "name": room["name"]},
+        }
     participant = {
         "id": str(uuid.uuid4()),
         "room_id": room["id"],
-        "name": data.name,
-        "age": data.age,
-        "bio": data.bio,
-        "interests": data.interests,
-        "photo": data.photo,
+        "user_id": user["id"],
+        "name": user["name"],
+        "age": age,
+        "bio": user.get("bio", ""),
+        "interests": user.get("interests", []),
+        "photo": user["photo"],
+        "latitude": data.latitude,
+        "longitude": data.longitude,
         "created_at": now_iso(),
     }
     await db.participants.insert_one(participant)
     participant.pop("_id", None)
-    return {"participant": participant, "room": {"id": room["id"], "code": room["code"], "name": room["name"]}}
+    return {
+        "participant": participant,
+        "room": {"id": room["id"], "code": room["code"], "name": room["name"]},
+    }
 
 
 @api_router.get("/rooms/{room_id}/participants")
@@ -247,7 +385,6 @@ async def list_participants(room_id: str, host: dict = Depends(get_current_host)
 
 @api_router.get("/rooms/{room_id}/deck")
 async def get_deck(room_id: str, participant_id: str):
-    # find ids the participant already swiped
     swiped = await db.swipes.find({"room_id": room_id, "participant_id": participant_id}, {"_id": 0, "target_id": 1}).to_list(1000)
     swiped_ids = [s["target_id"] for s in swiped]
     swiped_ids.append(participant_id)
@@ -261,7 +398,6 @@ async def get_deck(room_id: str, participant_id: str):
 # ========== SWIPES & MATCHES ==========
 @api_router.post("/swipes")
 async def create_swipe(data: SwipeCreate):
-    # save swipe
     swipe = {
         "id": str(uuid.uuid4()),
         "room_id": data.room_id,
@@ -275,7 +411,6 @@ async def create_swipe(data: SwipeCreate):
     is_match = False
     match = None
     if data.liked:
-        # check reciprocal
         reciprocal = await db.swipes.find_one({
             "room_id": data.room_id,
             "participant_id": data.target_id,
@@ -283,7 +418,6 @@ async def create_swipe(data: SwipeCreate):
             "liked": True,
         })
         if reciprocal:
-            # create match (avoid duplicate)
             ids_sorted = sorted([data.participant_id, data.target_id])
             existing_match = await db.matches.find_one({"room_id": data.room_id, "user_a": ids_sorted[0], "user_b": ids_sorted[1]})
             if existing_match:
@@ -308,17 +442,13 @@ async def list_matches(room_id: str, participant_id: str):
         {"room_id": room_id, "$or": [{"user_a": participant_id}, {"user_b": participant_id}]},
         {"_id": 0}
     ).sort("created_at", -1).to_list(200)
-    # enrich with other participant info
     result = []
     for m in matches:
         other_id = m["user_b"] if m["user_a"] == participant_id else m["user_a"]
         other = await db.participants.find_one({"id": other_id}, {"_id": 0})
         if other:
-            # last message
             last_msg = await db.messages.find_one(
-                {"match_id": m["id"]},
-                {"_id": 0},
-                sort=[("created_at", -1)],
+                {"match_id": m["id"]}, {"_id": 0}, sort=[("created_at", -1)]
             )
             result.append({
                 "match_id": m["id"],
@@ -379,7 +509,6 @@ async def list_reports(room_id: str, host: dict = Depends(get_current_host)):
     if not room:
         raise HTTPException(status_code=404, detail="Sala não encontrada")
     reports = await db.reports.find({"room_id": room_id}, {"_id": 0}).sort("created_at", -1).to_list(500)
-    # enrich
     enriched = []
     for r in reports:
         reporter = await db.participants.find_one({"id": r["reporter_id"]}, {"_id": 0, "photo": 0})
@@ -402,13 +531,11 @@ async def resolve_report(report_id: str, host: dict = Depends(get_current_host))
     return {"ok": True}
 
 
-# ========== HEALTH ==========
 @api_router.get("/")
 async def root():
-    return {"message": "LoungeMatch API", "status": "ok"}
+    return {"message": "Te Achei API", "status": "ok"}
 
 
-# Include the router in the main app
 app.include_router(api_router)
 
 app.add_middleware(
@@ -428,7 +555,6 @@ logger = logging.getLogger(__name__)
 
 @app.on_event("startup")
 async def startup():
-    # Seed default host
     admin_email = "admin@demo.com"
     existing = await db.hosts.find_one({"email": admin_email})
     if not existing:
@@ -437,6 +563,7 @@ async def startup():
             "email": admin_email,
             "password": hash_password("password123"),
             "name": "Admin Demo",
+            "plan": None,
             "created_at": now_iso(),
         })
         logger.info("Seeded default host admin@demo.com / password123")

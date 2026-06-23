@@ -33,6 +33,10 @@ export default function Dashboard() {
         api.get("/auth/host/me"),
         api.get("/rooms/host"),
       ]);
+      if (!meRes.data?.plan) {
+        router.replace("/host/plans");
+        return;
+      }
       setMe(meRes.data);
       setRooms(roomsRes.data);
     } catch (e: any) {

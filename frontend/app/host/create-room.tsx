@@ -12,23 +12,44 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { api } from "@/src/api/client";
+import { ensureLocation, openAppSettings } from "@/src/utils/location";
 import { colors, radius, spacing } from "@/src/theme";
 
 export default function CreateRoom() {
   const [name, setName] = useState("");
   const [desc, setDesc] = useState("");
+  const [radiusM, setRadiusM] = useState("200");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [locBlocked, setLocBlocked] = useState(false);
 
   const submit = async () => {
     setError("");
+    setLocBlocked(false);
     if (!name.trim()) {
       setError("Dê um nome para sua sala");
       return;
     }
+    const r = parseInt(radiusM, 10);
+    if (isNaN(r) || r < 50 || r > 2000) {
+      setError("Raio deve estar entre 50 e 2000 metros");
+      return;
+    }
     setLoading(true);
     try {
-      const res = await api.post("/rooms", { name, description: desc });
+      const loc = await ensureLocation();
+      if (!loc.ok) {
+        setError(loc.message);
+        setLocBlocked(loc.reason === "blocked");
+        return;
+      }
+      const res = await api.post("/rooms", {
+        name,
+        description: desc,
+        latitude: loc.latitude,
+        longitude: loc.longitude,
+        radius_m: r,
+      });
       router.replace({ pathname: "/host/room", params: { id: res.data.id } });
     } catch (e: any) {
       setError(e?.response?.data?.detail || "Erro ao criar sala");
@@ -58,7 +79,8 @@ export default function CreateRoom() {
           <View>
             <Text style={styles.title}>Crie a sala{"\n"}do seu rolê.</Text>
             <Text style={styles.sub}>
-              Um QR Code único será gerado para os convidados entrarem.
+              Um QR Code único será gerado. Sua localização atual define o raio
+              do rolê — só quem estiver no local poderá entrar.
             </Text>
             <View style={{ gap: spacing.md, marginTop: spacing.xl }}>
               <Text style={styles.label}>Nome do rolê</Text>
@@ -78,13 +100,34 @@ export default function CreateRoom() {
                 placeholder="Sábado, 21h, House do Marco"
                 placeholderTextColor={colors.onSurfaceTertiary}
                 multiline
-                style={[styles.input, { height: 80, textAlignVertical: "top" }]}
+                style={[styles.input, { height: 70, textAlignVertical: "top" }]}
               />
+              <Text style={styles.label}>Raio do rolê (metros)</Text>
+              <TextInput
+                testID="radius-input"
+                value={radiusM}
+                onChangeText={setRadiusM}
+                keyboardType="number-pad"
+                maxLength={4}
+                style={styles.input}
+              />
+              <Text style={styles.helper}>
+                Recomendado: 100m–300m para uma casa, 500m+ para festas grandes.
+              </Text>
               {error ? (
                 <Text testID="error-text" style={styles.err}>
                   {error}
                 </Text>
               ) : null}
+              {locBlocked && (
+                <Pressable
+                  testID="open-settings"
+                  onPress={openAppSettings}
+                  style={styles.settingsBtn}
+                >
+                  <Text style={styles.settingsTxt}>Abrir configurações</Text>
+                </Pressable>
+              )}
             </View>
           </View>
           <Pressable
@@ -93,8 +136,9 @@ export default function CreateRoom() {
             disabled={loading}
             style={[styles.cta, loading && { opacity: 0.5 }]}
           >
+            <Ionicons name="location" size={18} color="#fff" />
             <Text style={styles.ctaTxt}>
-              {loading ? "Criando..." : "Criar sala"}
+              {loading ? "Criando..." : "Usar minha localização e criar"}
             </Text>
           </Pressable>
         </View>
@@ -130,12 +174,17 @@ const styles = StyleSheet.create({
   },
   title: {
     color: colors.onSurface,
-    fontSize: 38,
+    fontSize: 36,
     fontWeight: "300",
     letterSpacing: -1,
-    lineHeight: 42,
+    lineHeight: 40,
   },
-  sub: { color: colors.onSurfaceTertiary, fontSize: 14, marginTop: spacing.md },
+  sub: {
+    color: colors.onSurfaceTertiary,
+    fontSize: 14,
+    marginTop: spacing.md,
+    lineHeight: 20,
+  },
   label: {
     color: colors.onSurfaceTertiary,
     fontSize: 11,
@@ -152,12 +201,22 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
+  helper: { color: colors.onSurfaceTertiary, fontSize: 12, marginTop: -4 },
   err: { color: colors.error, fontSize: 13 },
+  settingsBtn: { alignSelf: "flex-start", paddingVertical: 6 },
+  settingsTxt: {
+    color: colors.brand,
+    textDecorationLine: "underline",
+    fontWeight: "600",
+  },
   cta: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.sm,
     backgroundColor: colors.brandPrimary,
     paddingVertical: 18,
     borderRadius: radius.pill,
-    alignItems: "center",
   },
   ctaTxt: { color: "#fff", fontWeight: "700", fontSize: 16 },
 });

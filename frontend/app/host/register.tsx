@@ -31,7 +31,7 @@ export default function HostRegister() {
     try {
       const res = await api.post("/auth/host/register", { name, email, password });
       await saveToken(res.data.access_token);
-      router.replace("/host/dashboard");
+      router.replace("/host/plans");
     } catch (e: any) {
       setError(e?.response?.data?.detail || "Erro no cadastro");
     } finally {

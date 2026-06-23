@@ -178,7 +178,7 @@ export default function Index() {
         <View style={styles.ctaBlock}>
           <Pressable
             testID="cta-user"
-            onPress={() => router.push("/user/join")}
+            onPress={() => router.push("/user/auth")}
             style={({ pressed }) => [
               styles.primaryBtn,
               pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] },

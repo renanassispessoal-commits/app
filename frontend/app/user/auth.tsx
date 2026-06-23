@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   KeyboardAvoidingView,
   Platform,
@@ -11,28 +11,45 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { api, saveToken } from "@/src/api/client";
+import { api, getUser, saveUser } from "@/src/api/client";
+import { maskCpf, unmaskCpf, validCpf } from "@/src/utils/cpf";
 import { colors, radius, spacing } from "@/src/theme";
 
-export default function HostLogin() {
-  const [email, setEmail] = useState("admin@demo.com");
-  const [password, setPassword] = useState("password123");
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
+const PURPLE = "#9D4EDD";
+const PURPLE_DEEP = "#5A189A";
 
-  const submit = async () => {
+export default function UserAuth() {
+  const [cpf, setCpf] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    (async () => {
+      const u = await getUser();
+      if (u?.id) router.replace("/user/join");
+    })();
+  }, []);
+
+  const continueAction = async () => {
     setError("");
+    if (!validCpf(cpf)) {
+      setError("CPF inválido. Confira os dígitos.");
+      return;
+    }
     setLoading(true);
     try {
-      const res = await api.post("/auth/host/login", { email, password });
-      await saveToken(res.data.access_token);
-      if (!res.data.host?.plan) {
-        router.replace("/host/plans");
-      } else {
-        router.replace("/host/dashboard");
-      }
+      const res = await api.post("/users/lookup", { cpf: unmaskCpf(cpf) });
+      await saveUser(res.data);
+      router.replace("/user/join");
     } catch (e: any) {
-      setError(e?.response?.data?.detail || "Erro no login");
+      if (e?.response?.status === 404) {
+        router.push({
+          pathname: "/user/signup",
+          params: { cpf: unmaskCpf(cpf) },
+        });
+      } else {
+        setError(e?.response?.data?.detail || "Erro ao verificar CPF");
+      }
     } finally {
       setLoading(false);
     }
@@ -52,36 +69,29 @@ export default function HostLogin() {
           >
             <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
           </Pressable>
-          <Text style={styles.headerTitle}>Anfitrião</Text>
+          <Text style={styles.headerTitle}>Entrar</Text>
           <View style={{ width: 40 }} />
         </View>
         <View style={styles.content}>
           <View>
-            <Text style={styles.brand}>LOUNGEMATCH</Text>
-            <Text style={styles.title}>Bem-vindo de{"\n"}volta.</Text>
+            <Text style={styles.brand}>TE ACHEI</Text>
+            <Text style={styles.title}>Acesso com{"\n"}CPF.</Text>
             <Text style={styles.sub}>
-              Acesse seu painel para criar salas e acompanhar seu rolê.
+              Seu CPF garante que cada perfil é único, +18 e seguro. Ele fica
+              guardado e seu perfil é o mesmo em todos os rolês.
             </Text>
           </View>
 
           <View style={{ gap: spacing.md }}>
-            <Text style={styles.label}>E-mail</Text>
+            <Text style={styles.label}>CPF</Text>
             <TextInput
-              testID="email-input"
-              value={email}
-              onChangeText={setEmail}
-              autoCapitalize="none"
-              keyboardType="email-address"
-              placeholderTextColor={colors.onSurfaceTertiary}
-              style={styles.input}
-            />
-            <Text style={styles.label}>Senha</Text>
-            <TextInput
-              testID="password-input"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-              placeholderTextColor={colors.onSurfaceTertiary}
+              testID="cpf-input"
+              value={cpf}
+              onChangeText={(t) => setCpf(maskCpf(t))}
+              placeholder="000.000.000-00"
+              placeholderTextColor="#5C4870"
+              keyboardType="number-pad"
+              maxLength={14}
               style={styles.input}
             />
             {error ? (
@@ -93,26 +103,22 @@ export default function HostLogin() {
 
           <View style={{ gap: spacing.md }}>
             <Pressable
-              testID="login-btn"
-              onPress={submit}
-              disabled={loading}
-              style={[styles.cta, loading && { opacity: 0.5 }]}
+              testID="continue-btn"
+              onPress={continueAction}
+              disabled={loading || cpf.length < 14}
+              style={[
+                styles.cta,
+                (loading || cpf.length < 14) && { opacity: 0.5 },
+              ]}
             >
               <Text style={styles.ctaTxt}>
-                {loading ? "Entrando..." : "Entrar"}
+                {loading ? "Verificando..." : "Continuar"}
               </Text>
             </Pressable>
-            <Pressable
-              testID="register-btn"
-              onPress={() => router.push("/host/register")}
-            >
-              <Text style={styles.linkTxt}>
-                Não tem conta?{" "}
-                <Text style={{ color: colors.brand, fontWeight: "600" }}>
-                  Criar conta
-                </Text>
-              </Text>
-            </Pressable>
+            <Text style={styles.footnote}>
+              Ao continuar você confirma ter 18+ anos. Validação automática por
+              algoritmo oficial.
+            </Text>
           </View>
         </View>
       </SafeAreaView>
@@ -121,7 +127,7 @@ export default function HostLogin() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.surface },
+  root: { flex: 1, backgroundColor: "#050008" },
   headerRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -133,11 +139,13 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: colors.surfaceSecondary,
+    backgroundColor: "rgba(60,9,108,0.4)",
     alignItems: "center",
     justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(157,78,221,0.3)",
   },
-  headerTitle: { color: colors.onSurface, fontSize: 16, fontWeight: "600" },
+  headerTitle: { color: "#E0AAFF", fontSize: 16, fontWeight: "700" },
   content: {
     flex: 1,
     paddingHorizontal: spacing.xl,
@@ -146,7 +154,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   brand: {
-    color: colors.brand,
+    color: PURPLE,
     fontSize: 11,
     letterSpacing: 3,
     fontWeight: "700",
@@ -160,35 +168,43 @@ const styles = StyleSheet.create({
     lineHeight: 46,
   },
   sub: {
-    color: colors.onSurfaceTertiary,
+    color: "#CDB4DB",
     fontSize: 14,
     lineHeight: 20,
     marginTop: spacing.md,
-    maxWidth: 280,
+    maxWidth: 320,
   },
   label: {
-    color: colors.onSurfaceTertiary,
+    color: "#CDB4DB",
     fontSize: 11,
     letterSpacing: 2,
     textTransform: "uppercase",
   },
   input: {
-    backgroundColor: colors.surfaceSecondary,
+    backgroundColor: "rgba(20,5,35,0.7)",
     color: colors.onSurface,
     paddingHorizontal: spacing.lg,
-    paddingVertical: 14,
+    paddingVertical: 16,
     borderRadius: radius.md,
-    fontSize: 16,
+    fontSize: 18,
+    letterSpacing: 1,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: "rgba(157,78,221,0.4)",
   },
   err: { color: colors.error, fontSize: 13 },
   cta: {
-    backgroundColor: colors.brandPrimary,
+    backgroundColor: PURPLE_DEEP,
     paddingVertical: 18,
     borderRadius: radius.pill,
     alignItems: "center",
+    borderWidth: 1,
+    borderColor: "rgba(199,125,255,0.5)",
   },
   ctaTxt: { color: "#fff", fontWeight: "700", fontSize: 16 },
-  linkTxt: { color: colors.onSurfaceTertiary, textAlign: "center" },
+  footnote: {
+    color: "#6B4E7A",
+    fontSize: 11,
+    textAlign: "center",
+    lineHeight: 16,
+  },
 });
