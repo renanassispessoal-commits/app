@@ -68,13 +68,22 @@ export default function Dashboard() {
             <Text style={styles.greeting}>Olá,</Text>
             <Text style={styles.name}>{me?.name || "Anfitrião"}</Text>
           </View>
-          <Pressable
-            testID="logout-btn"
-            onPress={logout}
-            style={styles.iconBtn}
-          >
-            <Ionicons name="log-out-outline" size={22} color={colors.onSurface} />
-          </Pressable>
+          <View style={{ flexDirection: "row", gap: spacing.sm }}>
+            <Pressable
+              testID="blocked-btn"
+              onPress={() => router.push("/host/blocked")}
+              style={styles.iconBtn}
+            >
+              <Ionicons name="ban-outline" size={22} color={colors.error} />
+            </Pressable>
+            <Pressable
+              testID="logout-btn"
+              onPress={logout}
+              style={styles.iconBtn}
+            >
+              <Ionicons name="log-out-outline" size={22} color={colors.onSurface} />
+            </Pressable>
+          </View>
         </View>
       </SafeAreaView>
 

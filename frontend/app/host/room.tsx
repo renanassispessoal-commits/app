@@ -202,7 +202,17 @@ export default function HostRoom() {
               </View>
             ) : (
               reports.map((r) => (
-                <View key={r.id} style={styles.reportCard}>
+                <Pressable
+                  key={r.id}
+                  testID={`report-card-${r.id}`}
+                  onPress={() =>
+                    router.push({
+                      pathname: "/host/report",
+                      params: { id: r.id },
+                    })
+                  }
+                  style={styles.reportCard}
+                >
                   <View style={styles.reportHead}>
                     <View
                       style={[
@@ -228,7 +238,7 @@ export default function HostRoom() {
                       </Text>
                     </View>
                     <Text style={styles.reportStatus}>
-                      {r.status === "open" ? "Aberta" : "Resolvida"}
+                      {r.status === "open" ? "Ver detalhes →" : "Resolvida"}
                     </Text>
                   </View>
                   <Text style={styles.reportLine}>
@@ -236,20 +246,9 @@ export default function HostRoom() {
                     <Text style={styles.reportBold}>{r.reported?.name || "—"}</Text>
                   </Text>
                   {r.description ? (
-                    <Text style={styles.reportDesc}>{r.description}</Text>
+                    <Text style={styles.reportDesc} numberOfLines={2}>{r.description}</Text>
                   ) : null}
-                  {r.status === "open" && (
-                    <Pressable
-                      testID={`resolve-${r.id}`}
-                      onPress={() => resolveReport(r.id)}
-                      style={styles.resolveBtn}
-                    >
-                      <Text style={styles.resolveBtnTxt}>
-                        Marcar como resolvida
-                      </Text>
-                    </Pressable>
-                  )}
-                </View>
+                </Pressable>
               ))
             )}
           </>

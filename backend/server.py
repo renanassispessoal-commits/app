@@ -94,6 +94,13 @@ class ReportCreate(BaseModel):
     reason: str
     description: Optional[str] = ""
 
+class ReportMessageCreate(BaseModel):
+    text: str
+    participant_id: Optional[str] = None  # set when reporter is sending
+
+class ReportActionCreate(BaseModel):
+    action: str  # 'timeout_1d' | 'timeout_30d' | 'ban'
+
 
 # ========== HELPERS ==========
 def hash_password(pw: str) -> str:
@@ -374,6 +381,24 @@ async def join_room(data: ParticipantCreate):
     age = calc_age(user["birthdate"]) if user.get("birthdate") else 0
     if age < 18:
         raise HTTPException(status_code=403, detail="Apenas maiores de 18 anos.")
+    # Check ban from this room's host
+    ban = await db.host_bans.find_one({"host_id": room["host_id"], "user_id": user["id"]})
+    if ban:
+        exp = ban.get("expires_at")
+        active = True
+        if exp:
+            try:
+                if datetime.fromisoformat(exp) < datetime.now(timezone.utc):
+                    active = False
+            except Exception:
+                pass
+        if active:
+            label = {
+                "timeout_1d": "Você está em timeout de 24h",
+                "timeout_30d": "Você está em timeout de 30 dias",
+                "ban": "Você foi banido permanentemente das salas deste anfitrião",
+            }.get(ban.get("type"), "Acesso bloqueado pelo anfitrião")
+            raise HTTPException(status_code=403, detail=label)
     # Check if user already in room - return same participant
     existing = await db.participants.find_one({"room_id": room["id"], "user_id": user["id"]}, {"_id": 0})
     if existing:
@@ -609,6 +634,154 @@ async def resolve_report(report_id: str, host: dict = Depends(get_current_host))
         raise HTTPException(status_code=403, detail="Não autorizado")
     await db.reports.update_one({"id": report_id}, {"$set": {"status": "resolved"}})
     return {"ok": True}
+
+
+@api_router.get("/reports/{report_id}")
+async def get_report_detail(report_id: str, host: dict = Depends(get_current_host)):
+    report = await db.reports.find_one({"id": report_id}, {"_id": 0})
+    if not report:
+        raise HTTPException(status_code=404, detail="Denúncia não encontrada")
+    room = await db.rooms.find_one({"id": report["room_id"], "host_id": host["id"]}, {"_id": 0})
+    if not room:
+        raise HTTPException(status_code=403, detail="Não autorizado")
+    reporter = await db.participants.find_one({"id": report["reporter_id"]}, {"_id": 0})
+    reported = await db.participants.find_one({"id": report["reported_id"]}, {"_id": 0})
+    report["reporter"] = reporter
+    report["reported"] = reported
+    report["room"] = {"id": room["id"], "name": room["name"], "code": room["code"]}
+    # find any existing ban
+    if reported and reported.get("user_id"):
+        ban = await db.host_bans.find_one(
+            {"host_id": host["id"], "user_id": reported["user_id"]},
+            {"_id": 0},
+        )
+        report["existing_ban"] = ban
+    return report
+
+
+from fastapi import Request
+
+
+async def _auth_for_report(report_id: str, request: Request, participant_id: Optional[str]):
+    """Return (sender_role, sender_id) — host (JWT) or reporter (participant_id matches)."""
+    report = await db.reports.find_one({"id": report_id})
+    if not report:
+        raise HTTPException(status_code=404, detail="Denúncia não encontrada")
+    auth = request.headers.get("authorization", "")
+    if auth.startswith("Bearer "):
+        try:
+            payload = jwt.decode(auth.split(" ")[1], SECRET_KEY, algorithms=[ALGORITHM])
+            host_id = payload.get("host_id")
+            room = await db.rooms.find_one({"id": report["room_id"], "host_id": host_id})
+            if room:
+                return report, "host", host_id
+        except Exception:
+            pass
+    if participant_id and participant_id == report["reporter_id"]:
+        return report, "reporter", participant_id
+    raise HTTPException(status_code=403, detail="Não autorizado")
+
+
+@api_router.get("/reports/{report_id}/messages")
+async def list_report_messages(
+    report_id: str,
+    request: Request,
+    participant_id: Optional[str] = None,
+):
+    await _auth_for_report(report_id, request, participant_id)
+    msgs = await db.report_messages.find({"report_id": report_id}, {"_id": 0}).sort("created_at", 1).to_list(500)
+    return msgs
+
+
+@api_router.post("/reports/{report_id}/messages")
+async def post_report_message(
+    report_id: str,
+    data: ReportMessageCreate,
+    request: Request,
+):
+    _, role, sender_id = await _auth_for_report(report_id, request, data.participant_id)
+    msg = {
+        "id": str(uuid.uuid4()),
+        "report_id": report_id,
+        "sender_role": role,
+        "sender_id": sender_id,
+        "text": data.text,
+        "created_at": now_iso(),
+    }
+    await db.report_messages.insert_one(msg)
+    msg.pop("_id", None)
+    return msg
+
+
+@api_router.get("/hosts/me/bans")
+async def list_host_bans(host: dict = Depends(get_current_host)):
+    bans = await db.host_bans.find({"host_id": host["id"]}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    now_dt = datetime.now(timezone.utc)
+    enriched = []
+    for b in bans:
+        u = await db.users.find_one({"id": b["user_id"]}, {"_id": 0, "matches_quota": 0, "matches_used": 0})
+        b["user"] = u
+        # active?
+        active = True
+        exp = b.get("expires_at")
+        if exp:
+            try:
+                active = datetime.fromisoformat(exp) > now_dt
+            except Exception:
+                active = True
+        b["active"] = active
+        enriched.append(b)
+    return enriched
+
+
+@api_router.delete("/hosts/me/bans/{ban_id}")
+async def lift_ban(ban_id: str, host: dict = Depends(get_current_host)):
+    res = await db.host_bans.delete_one({"id": ban_id, "host_id": host["id"]})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Banimento não encontrado")
+    return {"ok": True}
+
+
+@api_router.post("/reports/{report_id}/action")
+async def take_report_action(
+    report_id: str, data: ReportActionCreate, host: dict = Depends(get_current_host)
+):
+    if data.action not in ("timeout_1d", "timeout_30d", "ban"):
+        raise HTTPException(status_code=400, detail="Ação inválida")
+    report = await db.reports.find_one({"id": report_id})
+    if not report:
+        raise HTTPException(status_code=404, detail="Denúncia não encontrada")
+    room = await db.rooms.find_one({"id": report["room_id"], "host_id": host["id"]})
+    if not room:
+        raise HTTPException(status_code=403, detail="Não autorizado")
+    reported = await db.participants.find_one({"id": report["reported_id"]})
+    if not reported or not reported.get("user_id"):
+        raise HTTPException(status_code=404, detail="Denunciado não encontrado")
+    now_dt = datetime.now(timezone.utc)
+    if data.action == "timeout_1d":
+        expires = (now_dt + timedelta(days=1)).isoformat()
+    elif data.action == "timeout_30d":
+        expires = (now_dt + timedelta(days=30)).isoformat()
+    else:
+        expires = None  # forever
+    ban = {
+        "id": str(uuid.uuid4()),
+        "host_id": host["id"],
+        "user_id": reported["user_id"],
+        "type": data.action,
+        "expires_at": expires,
+        "report_id": report_id,
+        "created_at": now_dt.isoformat(),
+    }
+    # upsert (replace any existing ban from same host on same user)
+    await db.host_bans.delete_many({"host_id": host["id"], "user_id": reported["user_id"]})
+    await db.host_bans.insert_one(ban)
+    await db.reports.update_one(
+        {"id": report_id},
+        {"$set": {"status": "resolved", "action": data.action, "action_at": now_iso()}},
+    )
+    ban.pop("_id", None)
+    return ban
 
 
 @api_router.get("/")
