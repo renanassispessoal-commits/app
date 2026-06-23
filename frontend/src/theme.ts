@@ -1,21 +1,36 @@
 export const colors = {
-  surface: "#09090B",
+  // Pure black with subtle purple tint for the body
+  surface: "#0A0010",
   onSurface: "#FAFAFA",
-  surfaceSecondary: "#18181B",
-  onSurfaceSecondary: "#E4E4E7",
-  surfaceTertiary: "#27272A",
-  onSurfaceTertiary: "#A1A1AA",
-  brand: "#10B981",
-  brandPrimary: "#059669",
+  surfaceSecondary: "#15071F",
+  onSurfaceSecondary: "#E0D4EC",
+  surfaceTertiary: "#22102E",
+  onSurfaceTertiary: "#B49ECB",
+  surfaceInverse: "#FAFAFA",
+  onSurfaceInverse: "#0A0010",
+
+  // Purple brand palette
+  brand: "#C77DFF", // accent lilac (icons, highlights, prices)
+  brandPrimary: "#5A189A", // primary CTA deep purple
   onBrandPrimary: "#FFFFFF",
-  brandSecondary: "#34D399",
-  brandTertiary: "#064E3B",
-  success: "#10B981",
+  brandSecondary: "#9D4EDD",
+  onBrandSecondary: "#10001A",
+  brandTertiary: "#240046", // deep purple background panels
+  onBrandTertiary: "#E0AAFF",
+
+  // Status
+  success: "#9D4EDD",
+  onSuccess: "#FFFFFF",
   warning: "#F59E0B",
+  onWarning: "#000000",
   error: "#E11D48",
   onError: "#FFFFFF",
-  border: "#27272A",
-  borderStrong: "#3F3F46",
+  info: "#7B2CBF",
+  onInfo: "#FFFFFF",
+
+  border: "#2B1640",
+  borderStrong: "#3F2050",
+  divider: "#2B1640",
 };
 
 export const spacing = {

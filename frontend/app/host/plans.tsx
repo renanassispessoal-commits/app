@@ -223,7 +223,7 @@ const styles = StyleSheet.create({
   },
   cardActive: {
     borderColor: colors.brand,
-    backgroundColor: "rgba(16,185,129,0.06)",
+    backgroundColor: "rgba(199,125,255,0.10)",
   },
   badge: {
     position: "absolute",

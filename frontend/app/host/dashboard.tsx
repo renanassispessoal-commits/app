@@ -127,7 +127,7 @@ export default function Dashboard() {
                 styles.statusPill,
                 {
                   backgroundColor: item.active
-                    ? "rgba(16,185,129,0.18)"
+                    ? "rgba(199,125,255,0.18)"
                     : colors.surfaceTertiary,
                 },
               ]}

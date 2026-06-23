@@ -397,7 +397,7 @@ const styles = StyleSheet.create({
   cardBio: { color: colors.onSurfaceSecondary, fontSize: 14, lineHeight: 20 },
   interestRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 4 },
   tag: {
-    backgroundColor: "rgba(16,185,129,0.18)",
+    backgroundColor: "rgba(199,125,255,0.18)",
     borderColor: colors.brand,
     borderWidth: 1,
     borderRadius: radius.pill,

@@ -57,7 +57,7 @@ export default function HostLogin() {
         </View>
         <View style={styles.content}>
           <View>
-            <Text style={styles.brand}>LOUNGEMATCH</Text>
+            <Text style={styles.brand}>TE ACHEI</Text>
             <Text style={styles.title}>Bem-vindo de{"\n"}volta.</Text>
             <Text style={styles.sub}>
               Acesse seu painel para criar salas e acompanhar seu rolê.
